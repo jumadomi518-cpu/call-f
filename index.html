@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title></title>
+  <style>
+   * {
+     font-family: "Poppins", sans-serif;
+     padding: 0;
+     margin: 0;
+   }
+  main {
+    padding: 2em;
+  }
+    section, div {
+      font-size: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    header {
+      padding: 0.5em;
+    }
+    h1 {
+      text-align: center;
+    }
+    
+    button {
+      font-size: 1.5rem;
+      background-color: green;
+      color: white;
+      margin: 1em 0 1em 0;
+      border: none;
+      padding: 0.5em;
+      border-radius: 0.3em;
+    }
+    
+    #answer {
+      display: none;
+    }
+  
+    video {
+      height: 60vh;
+      border: 2px solid green;
+      border-radius: 10px;
+      object-fit: cover;
+    }
+    #local {
+      position: absolute;
+      height: 10vh;
+      width: 10vh;
+      bottom: 0;
+      right: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+  <h1>Video Calling system, engineered by DOMINIC JUMA.</h1>
+  </header>
+  <main>
+    <section>
+    <video id="remote">
+      
+    </video>
+       <video id="local" muted>
+      
+    </video>
+        </section>
+        <div>
+    <button id="call">call</button>
+    <p id="call-display"></p>
+    <button id="answer">answer</button>
+        </div>
+
+  </main>
+  <script>
+    const ws = new WebSocket("wss://call-pt7x.onrender.com");
+const callbtn = document.getElementById("call");
+const answerBtn = document.getElementById("answer");
+const localVideo = document.querySelector("#local");
+const remoteVideo = document.querySelector("#remote");
+const callDisplay = document.getElementById("call-display");
+
+
+
+
+
+const configuration = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" }
+  ]
+};
+
+const pc = new RTCPeerConnection(configuration);
+
+if (!localStorage.getItem("id")) {
+  const setId = prompt("Set your identity a number between 1 and 10");
+  localStorage.setItem("id", setId)
+}
+
+
+
+
+ws.onopen = () => {
+  console.log("ws connected");
+  ws.send(JSON.stringify({
+    type: "id",
+    id: localStorage.getItem("id")
+  }))
+};
+
+
+callbtn.onclick = async () => {
+  localVideo.play();
+  remoteVideo.play();
+  callbtn.setAttribute("disabled", "true");
+  const targertId = prompt("Enter user id");
+   if (!id) {
+     alert("user id required");
+     return;
+   }
+   localStorage.setItem("targertId", id);
+  callbtn.innerText = "calling...";
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  ws.send(JSON.stringify({
+    type: "offer",
+    offer: pc.localDescription,
+    to: localStorage.getItem("targertId"),
+    from: localStorage.getItem("id")
+  }));
+};
+
+
+answerBtn.onclick = async () => {
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  ws.send(JSON.stringify({
+    type: "answer",
+    answer: pc.localDescription,
+    to: localStorage.getItem("callerId"),
+    from: localStorage.getItem("id")
+  }));
+};
+
+
+ws.onmessage = async (e) => {
+  const data = JSON.parse(e.data);
+ 
+  // OFFER RECEIVED
+  if (data.type === "offer") {
+    answerBtn.style.display = "block";
+    callbtn.style.display = "none";
+    callDisplay.innerText = "Incoming call...";
+    await pc.setRemoteDescription(data.offer);
+    localStorage.setItem("callerId", data.from);
+  }
+
+  // ANSWER RECEIVED
+  if (data.type === "answer") {
+    await pc.setRemoteDescription(data.answer)
+    callbtn.style.display = "none";
+  }
+
+  // ICE CANDIDATE RECEIVED
+  if (data.type === "candidate") {
+    try {
+      await pc.addIceCandidate(data.candidate);
+    } catch (err) {
+      console.error("ICE error:", err);
+    }
+  }
+}
+
+pc.onicecandidate = (e) => {
+  if (e.candidate && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: "candidate",
+      candidate: e.candidate,
+      to: localStorage.getItem("callerId"),
+      from: localStorage.getItem("id")
+    }));
+  }
+};
+    async function camera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "user" },
+    audio: true
+  })
+
+localVideo.srcObject = stream;
+stream.getTracks().forEach(track => {
+  pc.addTrack(track, stream)
+})
+}
+
+pc.ontrack = (e) => {
+  const remoteStream = e.streams[0];
+  remoteVideo.srcObject = remoteStream;
+}
+camera()
+  </script>
+</body>
+
+</html>
