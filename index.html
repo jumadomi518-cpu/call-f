@@ -1,126 +1,150 @@
 <!DOCTYPE html>
 <html>
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title></title>
-  <style>
-   * {
-     font-family: "Poppins", sans-serif;
-     padding: 0;
-     margin: 0;
-   }
-  main {
-    padding: 2em;
-  }
-    section, div {
-      font-size: 1.5rem;
-      display: flex;
-      flex-direction: column;
-      position: relative;
-    }
-    header {
-      padding: 0.5em;
-    }
-    h1 {
-      text-align: center;
-    }
-    
-    button {
-      font-size: 1.5rem;
-      background-color: green;
-      color: white;
-      margin: 1em 0 1em 0;
-      border: none;
-      padding: 0.5em;
-      border-radius: 0.3em;
-    }
-    
-    #answer {
-      display: none;
-    }
-  
-    video {
-      height: 60vh;
-      border: 2px solid green;
-      border-radius: 10px;
-      object-fit: cover;
-    }
-    #local {
-      position: absolute;
-      height: 10vh;
-      width: 10vh;
-      bottom: 0;
-      right: 0;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Call</title>
+
+<style>
+* { font-family: Poppins; margin:0; padding:0; }
+main { padding: 2em; }
+section { position: relative; display:flex; flex-direction:column; }
+video {
+  height:60vh;
+  border:2px solid green;
+  border-radius:10px;
+  object-fit:cover;
+}
+#local {
+  position:absolute;
+  height:10vh;
+  width:10vh;
+  bottom:0;
+  right:0;
+}
+button {
+  font-size:1.2rem;
+  margin:1em 0;
+  padding:0.5em;
+  background:green;
+  color:white;
+  border:none;
+}
+#answer { display:none; }
+</style>
 </head>
 
 <body>
-  <header>
-  <h1>Video Calling system, engineered by DOMINIC JUMA.</h1>
-  </header>
-  <main>
-    <section>
-    <video id="remote">
-      
-    </video>
-       <video id="local" muted>
-      
-    </video>
-        </section>
-        <div>
-    <button id="call">call</button>
-    <p id="call-display"></p>
-    <button id="answer">answer</button>
-        </div>
 
-  </main>
-  <script>
-    const ws = new WebSocket("wss://call-pt7x.onrender.com");
-const callbtn = document.getElementById("call");
+<h2>Video Calling System. Engineered by dominic juma</h2>
+
+<main>
+<section>
+  <video id="remote" autoplay playsinline></video>
+  <video id="local" autoplay playsinline muted></video>
+</section>
+
+<button id="call">Call</button>
+<button id="answer">Answer</button>
+<p id="status"></p>
+</main>
+
+<script>
+const ws = new WebSocket("wss://call-pt7x.onrender.com");
+
+const callBtn = document.getElementById("call");
 const answerBtn = document.getElementById("answer");
-const localVideo = document.querySelector("#local");
-const remoteVideo = document.querySelector("#remote");
-const callDisplay = document.getElementById("call-display");
+const localVideo = document.getElementById("local");
+const remoteVideo = document.getElementById("remote");
+const status = document.getElementById("status");
 
-const configuration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" }
-  ]
-};
+let pc;
+let localStream;
+let currentPeer = null;
+let pendingCandidates = [];
 
-const pc = new RTCPeerConnection(configuration);
-
-// SET USER ID
+// USER ID
 if (!localStorage.getItem("id")) {
-  const setId = prompt("Set your identity (1–10)");
-  localStorage.setItem("id", setId);
+  localStorage.setItem("id", prompt("Enter your ID (1-10)"));
 }
 
-// WS CONNECTED
+// INIT PEER CONNECTION
+function createPC() {
+  pc = new RTCPeerConnection({
+  iceServers: [
+      {
+        urls: "stun:stun.relay.metered.ca:80",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80",
+        username: "59a85f32d0ed831bdb30ba3f",
+        credential: "1Eup6H0Wjz76QcQR",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:80?transport=tcp",
+        username: "59a85f32d0ed831bdb30ba3f",
+        credential: "1Eup6H0Wjz76QcQR",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:443",
+        username: "59a85f32d0ed831bdb30ba3f",
+        credential: "1Eup6H0Wjz76QcQR",
+      },
+      {
+        urls: "turns:global.relay.metered.ca:443?transport=tcp",
+        username: "59a85f32d0ed831bdb30ba3f",
+        credential: "1Eup6H0Wjz76QcQR",
+      },
+  ],
+});
+                      
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: "candidate",
+        candidate: e.candidate,
+        to: currentPeer,
+        from: localStorage.getItem("id")
+      }));
+    }
+  };
+
+  pc.ontrack = (e) => {
+    remoteVideo.srcObject = e.streams[0];
+  };
+
+  if (localStream) {
+    localStream.getTracks().forEach(track => {
+      pc.addTrack(track, localStream);
+    });
+  }
+}
+
+// CAMERA
+async function initMedia() {
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: true
+  });
+  localVideo.srcObject = localStream;
+}
+
+// WS CONNECT
 ws.onopen = () => {
-  console.log("ws connected");
   ws.send(JSON.stringify({
     type: "id",
     id: localStorage.getItem("id")
   }));
 };
 
-// CALL BUTTON
-callbtn.onclick = async () => {
-  const targetId = prompt("Enter user id");
+// CALL
+callBtn.onclick = async () => {
+  currentPeer = prompt("Enter target ID");
+  if (!currentPeer) return;
 
-  if (!targetId) {
-    alert("user id required");
-    return;
-  }
-
-  localStorage.setItem("targetId", targetId);
-
-  callbtn.setAttribute("disabled", "true");
-  callbtn.innerText = "calling...";
+  await initMedia();
+  createPC();
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
@@ -128,91 +152,67 @@ callbtn.onclick = async () => {
   ws.send(JSON.stringify({
     type: "offer",
     offer: pc.localDescription,
-    to: targetId,
+    to: currentPeer,
     from: localStorage.getItem("id")
   }));
+
+  status.innerText = "Calling...";
 };
 
-// ANSWER BUTTON
+// ANSWER
 answerBtn.onclick = async () => {
+  answerBtn.style.display = "none";
+
+  await initMedia();
+  createPC();
+
+  await pc.setRemoteDescription(window.incomingOffer);
+
+  // Add queued ICE
+  for (const c of pendingCandidates) {
+    await pc.addIceCandidate(c);
+  }
+  pendingCandidates = [];
+
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
 
   ws.send(JSON.stringify({
     type: "answer",
     answer: pc.localDescription,
-    to: localStorage.getItem("callerId"),
+    to: currentPeer,
     from: localStorage.getItem("id")
   }));
 
-  answerBtn.style.display = "none";
+  status.innerText = "Call connected";
 };
 
-// WS MESSAGE HANDLER
+// RECEIVE SIGNALS
 ws.onmessage = async (e) => {
   const data = JSON.parse(e.data);
 
-  // OFFER RECEIVED
   if (data.type === "offer") {
-    answerBtn.style.display = "block";
-    callbtn.style.display = "none";
-    callDisplay.innerText = "Incoming call...";
+    currentPeer = data.from;
+    window.incomingOffer = data.offer;
 
-    await pc.setRemoteDescription(data.offer);
-    localStorage.setItem("callerId", data.from);
+    answerBtn.style.display = "block";
+    status.innerText = "Incoming call...";
   }
 
-  // ANSWER RECEIVED
   if (data.type === "answer") {
     await pc.setRemoteDescription(data.answer);
-    callbtn.style.display = "none";
+    status.innerText = "Call connected";
   }
 
-  // ICE CANDIDATE RECEIVED
   if (data.type === "candidate") {
-    try {
-      if (pc.remoteDescription) {
-        await pc.addIceCandidate(data.candidate);
-      }
-    } catch (err) {
-      console.error("ICE error:", err);
+    if (pc && pc.remoteDescription) {
+      await pc.addIceCandidate(data.candidate);
+    } else {
+      pendingCandidates.push(data.candidate);
     }
   }
 };
+</script>
 
-// SEND ICE CANDIDATES
-pc.onicecandidate = (e) => {
-  if (e.candidate && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      type: "candidate",
-      candidate: e.candidate,
-      to: localStorage.getItem("callerId") || localStorage.getItem("targetId"),
-      from: localStorage.getItem("id")
-    }));
-  }
-};
-
-// GET CAMERA + MIC
-async function camera() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "user" },
-    audio: true
-  });
-
-  localVideo.srcObject = stream;
-
-  stream.getTracks().forEach(track => {
-    pc.addTrack(track, stream);
-  });
-}
-
-// RECEIVE REMOTE STREAM
-pc.ontrack = (e) => {
-  remoteVideo.srcObject = e.streams[0];
-};
-
-camera();
-  </script>
 </body>
-
 </html>
