@@ -85,10 +85,6 @@ const localVideo = document.querySelector("#local");
 const remoteVideo = document.querySelector("#remote");
 const callDisplay = document.getElementById("call-display");
 
-
-
-
-
 const configuration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" }
@@ -97,46 +93,47 @@ const configuration = {
 
 const pc = new RTCPeerConnection(configuration);
 
+// SET USER ID
 if (!localStorage.getItem("id")) {
-  const setId = prompt("Set your identity a number between 1 and 10");
-  localStorage.setItem("id", setId)
+  const setId = prompt("Set your identity (1–10)");
+  localStorage.setItem("id", setId);
 }
 
-
-
-
+// WS CONNECTED
 ws.onopen = () => {
   console.log("ws connected");
   ws.send(JSON.stringify({
     type: "id",
     id: localStorage.getItem("id")
-  }))
+  }));
 };
 
-
+// CALL BUTTON
 callbtn.onclick = async () => {
-  localVideo.play();
-  remoteVideo.play();
+  const targetId = prompt("Enter user id");
+
+  if (!targetId) {
+    alert("user id required");
+    return;
+  }
+
+  localStorage.setItem("targetId", targetId);
+
   callbtn.setAttribute("disabled", "true");
-  const targertId = prompt("Enter user id");
-   if (!id) {
-     alert("user id required");
-     return;
-   }
-   localStorage.setItem("targertId", id);
   callbtn.innerText = "calling...";
+
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
   ws.send(JSON.stringify({
     type: "offer",
     offer: pc.localDescription,
-    to: localStorage.getItem("targertId"),
+    to: targetId,
     from: localStorage.getItem("id")
   }));
 };
 
-
+// ANSWER BUTTON
 answerBtn.onclick = async () => {
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
@@ -147,64 +144,74 @@ answerBtn.onclick = async () => {
     to: localStorage.getItem("callerId"),
     from: localStorage.getItem("id")
   }));
+
+  answerBtn.style.display = "none";
 };
 
-
+// WS MESSAGE HANDLER
 ws.onmessage = async (e) => {
   const data = JSON.parse(e.data);
- 
+
   // OFFER RECEIVED
   if (data.type === "offer") {
     answerBtn.style.display = "block";
     callbtn.style.display = "none";
     callDisplay.innerText = "Incoming call...";
+
     await pc.setRemoteDescription(data.offer);
     localStorage.setItem("callerId", data.from);
   }
 
   // ANSWER RECEIVED
   if (data.type === "answer") {
-    await pc.setRemoteDescription(data.answer)
+    await pc.setRemoteDescription(data.answer);
     callbtn.style.display = "none";
   }
 
   // ICE CANDIDATE RECEIVED
   if (data.type === "candidate") {
     try {
-      await pc.addIceCandidate(data.candidate);
+      if (pc.remoteDescription) {
+        await pc.addIceCandidate(data.candidate);
+      }
     } catch (err) {
       console.error("ICE error:", err);
     }
   }
-}
+};
 
+// SEND ICE CANDIDATES
 pc.onicecandidate = (e) => {
   if (e.candidate && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({
       type: "candidate",
       candidate: e.candidate,
-      to: localStorage.getItem("callerId"),
+      to: localStorage.getItem("callerId") || localStorage.getItem("targetId"),
       from: localStorage.getItem("id")
     }));
   }
 };
-    async function camera() {
+
+// GET CAMERA + MIC
+async function camera() {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: "user" },
     audio: true
-  })
+  });
 
-localVideo.srcObject = stream;
-stream.getTracks().forEach(track => {
-  pc.addTrack(track, stream)
-})
+  localVideo.srcObject = stream;
+
+  stream.getTracks().forEach(track => {
+    pc.addTrack(track, stream);
+  });
 }
 
+// RECEIVE REMOTE STREAM
 pc.ontrack = (e) => {
-  const remoteStream = e.streams[0];
-  remoteVideo.srcObject = remoteStream;
-}
-camera()
+  remoteVideo.srcObject = e.streams[0];
+};
+
+camera();
   </script>
 </body>
 
